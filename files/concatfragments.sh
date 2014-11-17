@@ -98,14 +98,14 @@ if [ ! -d "${WORKDIR}/fragments" ]  && [ ! -x "${WORKDIR}/fragments" ]; then
 fi
 
 # are there actually any fragments?
-if [ ! "$(ls -A """${WORKDIR}/fragments""")" ]; then
+if [ "x`find "${WORKDIR}/fragments" -maxdepth 1 -type f -printf . -quit`" = x ]; then
 	if [ "x${FORCE}" = "x" ]; then
 		echo "The fragments directory is empty, cowardly refusing to make empty config files"
 		exit 1
 	fi
 fi
 
-cd "${WORKDIR}"
+cd "${WORKDIR}" || exit 1
 
 if [ "x${WARNMSG}" = "x" ]; then
 	: > "fragments.concat"
@@ -113,19 +113,17 @@ else
 	printf '%s\n' "$WARNMSG" > "fragments.concat"
 fi
 
-# find all the files in the fragments directory, sort them numerically and concat to fragments.concat in the working dir
-IFS_BACKUP=$IFS
-IFS='
-'
-for fragfile in `find fragments/ -type f -follow -print0 | xargs -0 -n1 basename | LC_ALL=C sort ${SORTARG}`
-do
-    cat "fragments/$fragfile" >> "fragments.concat"
-    # Handle newlines.
-    if [ "x${ENSURE_NEWLINE}" != "x" ]; then
-      echo >> "fragments.concat"
-    fi
-done
-IFS=$IFS_BACKUP
+# if requested, add a newline to all fragments that do not have one
+if [ "x${ENSURE_NEWLINE}" != x ]; then
+	find fragments/ -maxdepth 1 -type f -print0 | \
+		xargs -0 -I '{}' sh -c 'if tail -c 1 {} | grep -q .; then echo >> {}; fi'
+fi
+
+# find all the files in the fragments directory, sort them and concat
+# to fragments.concat in the working dir
+find fragments/ -maxdepth 1 -type f -printf '%f\0' | \
+	LC_ALL=C sort -z ${SORTARG} | \
+	xargs -0 -I '{}' cat 'fragments/{}' > "fragments.concat"
 
 if [ "x${TEST}" = "x" ]; then
 	# This is a real run, copy the file to outfile
